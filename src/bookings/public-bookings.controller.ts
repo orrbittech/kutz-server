@@ -1,9 +1,5 @@
 import { Controller, Get, Query } from '@nestjs/common';
-import {
-  ApiOkResponse,
-  ApiOperation,
-  ApiTags,
-} from '@nestjs/swagger';
+import { ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import {
   ApiStandardErrorResponses,
@@ -33,7 +29,9 @@ export class PublicBookingsController {
     description: 'Slot occupancy for PENDING and CONFIRMED bookings',
     schema: bookingOccupancyResponseOpenApiSchema,
   })
-  occupancy(@Query() query: BookingOccupancyQueryDto): Promise<BookingOccupancyResponse> {
+  occupancy(
+    @Query() query: BookingOccupancyQueryDto,
+  ): Promise<BookingOccupancyResponse> {
     return this.bookingsService.getOccupancyForRange(
       new Date(query.from),
       new Date(query.to),

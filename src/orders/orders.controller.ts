@@ -23,17 +23,20 @@ export class OrdersController {
   constructor(private readonly ordersService: OrdersService) {}
 
   @Get()
-  @ApiOperation({ summary: 'List orders for the authenticated Clerk user' })
+  @ApiOperation({
+    summary:
+      'List orders: own orders for normal users; all orders when the actor is an admin (allowlist or Clerk role in JWT)',
+  })
   @ApiStandardErrorResponses()
   @ApiOkResponse({
-    description: 'Orders for current user',
+    description: 'Orders for current user, or all orders for admins',
     schema: {
       type: 'array',
       items: orderResponseOpenApiSchema,
     },
   })
   list(@CurrentUser() user: ClerkRequestUser): Promise<OrderResponse[]> {
-    return this.ordersService.listForUser(user.clerkUserId);
+    return this.ordersService.listForActor(user);
   }
 
   @Post()

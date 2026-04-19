@@ -1,4 +1,10 @@
-import { Controller, Param, ParseUUIDPipe, Post, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Param,
+  ParseUUIDPipe,
+  Post,
+  UseGuards,
+} from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiOkResponse,
@@ -29,9 +35,7 @@ export class AdminBookingsController {
     description: 'Booking marked serviced',
     schema: bookingResponseOpenApiSchema,
   })
-  complete(
-    @Param('id', ParseUUIDPipe) id: string,
-  ): Promise<BookingResponse> {
+  complete(@Param('id', ParseUUIDPipe) id: string): Promise<BookingResponse> {
     return this.bookingsService.completeBookingForAdmin(id);
   }
 }

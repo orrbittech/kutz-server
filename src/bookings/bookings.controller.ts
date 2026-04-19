@@ -43,17 +43,20 @@ export class BookingsController {
   constructor(private readonly bookingsService: BookingsService) {}
 
   @Get()
-  @ApiOperation({ summary: 'List bookings for the authenticated Clerk user' })
+  @ApiOperation({
+    summary:
+      'List bookings: own bookings for normal users; all bookings when the actor is an admin (allowlist or Clerk role in JWT)',
+  })
   @ApiStandardErrorResponses()
   @ApiOkResponse({
-    description: 'Bookings for current user',
+    description: 'Bookings for current user, or all bookings for admins',
     schema: {
       type: 'array',
       items: bookingResponseOpenApiSchema,
     },
   })
   list(@CurrentUser() user: ClerkRequestUser): Promise<BookingResponse[]> {
-    return this.bookingsService.listForUser(user.clerkUserId);
+    return this.bookingsService.listForActor(user);
   }
 
   @Post()

@@ -24,7 +24,7 @@ export class StripeBookingsWebhookController {
     const raw = req.body as Buffer;
     const event = this.stripe.constructWebhookEvent(raw, sig);
     if (event.type === 'payment_intent.succeeded') {
-      const pi = event.data.object as Stripe.PaymentIntent;
+      const pi = event.data.object;
       await this.bookings.applyPaymentIntentSucceeded(pi);
     }
     return { received: true };

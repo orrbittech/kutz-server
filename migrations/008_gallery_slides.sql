@@ -1,6 +1,6 @@
 -- Marketing gallery (Texture & tone) for GET /api/v1/gallery-slides (maps to GallerySlideEntity / table `gallery_slides`).
 -- Idempotent: fixed UUID primary keys + ON CONFLICT DO UPDATE.
--- imageUrl paths are served from web/public (e.g. /images/gallery/01.jpg).
+-- imageUrl values use https://images.unsplash.com (see web/next.config.ts remotePatterns).
 
 CREATE TABLE IF NOT EXISTS gallery_slides (
   id uuid PRIMARY KEY,
@@ -23,7 +23,7 @@ INSERT INTO gallery_slides (
 ) VALUES
   (
     'c2000000-0000-4000-8000-000000000001',
-    '/images/gallery/01.jpg',
+    'https://images.unsplash.com/photo-1622286342621-4bd786c2447c?auto=format&fit=crop&w=1200&q=80',
     'Clean skin fade with sharp lineup',
     10,
     true,
@@ -32,7 +32,7 @@ INSERT INTO gallery_slides (
   ),
   (
     'c2000000-0000-4000-8000-000000000002',
-    '/images/gallery/02.jpg',
+    'https://images.unsplash.com/photo-1621605815971-fbc98d665033?auto=format&fit=crop&w=1200&q=80',
     'Textured crop with natural matte finish',
     20,
     true,
@@ -41,7 +41,7 @@ INSERT INTO gallery_slides (
   ),
   (
     'c2000000-0000-4000-8000-000000000003',
-    '/images/gallery/03.jpg',
+    'https://images.unsplash.com/photo-1762965164662-30126ffccaf1?auto=format&fit=crop&w=1200&q=80',
     'Classic taper with blended neckline',
     30,
     true,
@@ -50,8 +50,8 @@ INSERT INTO gallery_slides (
   ),
   (
     'c2000000-0000-4000-8000-000000000004',
-    '/images/gallery/04.jpg',
-    'Longer top with styled fringe',
+    'https://images.unsplash.com/photo-1678356163587-6bb3afb89679?auto=format&fit=crop&w=1200&q=80',
+    'Shears and brush at the styling station',
     40,
     true,
     now(),
@@ -59,7 +59,7 @@ INSERT INTO gallery_slides (
   ),
   (
     'c2000000-0000-4000-8000-000000000005',
-    '/images/gallery/05.jpg',
+    'https://images.unsplash.com/photo-1599351431202-1e0f0137899a?auto=format&fit=crop&w=1200&q=80',
     'Beard shape and cheek line detail',
     50,
     true,
@@ -68,8 +68,8 @@ INSERT INTO gallery_slides (
   ),
   (
     'c2000000-0000-4000-8000-000000000006',
-    '/images/gallery/06.jpg',
-    'Low burst fade with defined part',
+    'https://images.unsplash.com/photo-1770253980732-dfed1cfdfa43?auto=format&fit=crop&w=1200&q=80',
+    'Clipper work and clean taper line',
     60,
     true,
     now(),

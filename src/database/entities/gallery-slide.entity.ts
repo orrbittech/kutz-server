@@ -2,11 +2,13 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  Index,
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
 
 @Entity({ name: 'gallery_slides' })
+@Index('idx_gallery_slides_active_sort_order', ['isActive', 'sortOrder'])
 export class GallerySlideEntity {
   @PrimaryGeneratedColumn('uuid')
   id!: string;

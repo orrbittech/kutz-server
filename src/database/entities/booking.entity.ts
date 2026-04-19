@@ -10,11 +10,14 @@ import {
   UpdateDateColumn,
 } from 'typeorm';
 import { BookingStyleEntity } from './booking-style.entity';
-import type { BookingPaymentStatusValue, BookingStatusValue } from '../../domain/enums';
+import type {
+  BookingPaymentStatusValue,
+  BookingStatusValue,
+} from '../../domain/enums';
 import { StyleEntity } from './style.entity';
 
 @Entity({ name: 'bookings' })
-@Index(['clerkUserId'])
+@Index('idx_bookings_clerk_user_created_at', ['clerkUserId', 'createdAt'])
 @Index(['scheduledAt'])
 export class BookingEntity {
   @PrimaryGeneratedColumn('uuid')

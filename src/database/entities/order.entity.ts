@@ -9,7 +9,7 @@ import {
 import type { OrderStatusValue } from '../../domain/enums';
 
 @Entity({ name: 'orders' })
-@Index(['clerkUserId'])
+@Index('idx_orders_clerk_user_created_at', ['clerkUserId', 'createdAt'])
 export class OrderEntity {
   @PrimaryGeneratedColumn('uuid')
   id!: string;

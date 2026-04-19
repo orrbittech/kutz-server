@@ -4,6 +4,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import type { ClerkRequestUser } from '../auth/clerk-user.types';
 import { cacheKeys } from '../common/cache/cache-keys';
 import { getCacheTtlMs } from '../common/cache/cache-ttl';
 import { OrderEntity } from '../database/entities/order.entity';
@@ -35,8 +36,22 @@ export class OrdersService {
     this.logger.log(`${action} ${JSON.stringify(meta)}`);
   }
 
+  async listForActor(user: ClerkRequestUser): Promise<OrderResponse[]> {
+    if (user.isAdmin) {
+      this.accessLog('orders_list', {
+        clerkUserId: user.clerkUserId,
+        scope: 'all',
+      });
+      const rows = await this.orders.find({
+        order: { createdAt: 'DESC' },
+      });
+      return rows.map((row) => this.toResponse(row));
+    }
+    return this.listForUser(user.clerkUserId);
+  }
+
   async listForUser(clerkUserId: string): Promise<OrderResponse[]> {
-    this.accessLog('orders_list_for_user', { clerkUserId });
+    this.accessLog('orders_list', { clerkUserId, scope: 'own' });
     const ttl = getCacheTtlMs(this.config);
     return this.cache.wrap(
       cacheKeys.ordersList(clerkUserId),
