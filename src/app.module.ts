@@ -40,13 +40,7 @@ import { TeamMembersModule } from './team-members/team-members.module';
       imports: [ConfigModule],
       inject: [ConfigService],
       useFactory: (config: ConfigService) => {
-        const syncOverride = parseEnvBoolean(
-          config.get<string>('DATABASE_SYNCHRONIZE'),
-        );
-        const synchronize =
-          syncOverride !== undefined
-            ? syncOverride
-            : config.get<string>('NODE_ENV') !== 'production';
+        const synchronize = true;
         const nodeEnv = config.get<string>('NODE_ENV');
         const logging: LoggerOptions =
           nodeEnv === 'production' ? false : ['error'];
