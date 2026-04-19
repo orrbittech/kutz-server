@@ -9,6 +9,15 @@ export function sumStylePricesCents(
   return styles.reduce((acc, s) => acc + (s.priceCents ?? 0), 0);
 }
 
+export function sumStyleLinePricesCents(
+  lines: { priceCents: number | null; quantity: number }[],
+): number {
+  return lines.reduce(
+    (acc, line) => acc + (line.priceCents ?? 0) * line.quantity,
+    0,
+  );
+}
+
 export function bookingRequiresCardPayment(totalCents: number): boolean {
   return totalCents >= STRIPE_MIN_ZAR_CHARGE_CENTS;
 }

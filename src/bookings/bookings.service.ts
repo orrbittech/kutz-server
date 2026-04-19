@@ -27,7 +27,7 @@ import { StripeService } from '../stripe/stripe.service';
 import {
   bookingRequiresCardPayment,
   STRIPE_MIN_ZAR_CHARGE_CENTS,
-  sumStylePricesCents,
+  sumStyleLinePricesCents,
 } from './booking-payment.util';
 import {
   buildBookingCustomerPayload,
@@ -52,6 +52,22 @@ import type {
   BookingResponse,
 } from './schemas/booking.zod';
 import type Stripe from 'stripe';
+
+function mergeStyleLineItems(
+  items: { styleId: string; quantity: number }[],
+): { styleId: string; quantity: number }[] {
+  const order: string[] = [];
+  const qty = new Map<string, number>();
+  for (const it of items) {
+    const raw = Math.min(99, Math.max(1, Math.floor(Number(it.quantity))));
+    const sum = Math.min(99, (qty.get(it.styleId) ?? 0) + raw);
+    if (!qty.has(it.styleId)) {
+      order.push(it.styleId);
+    }
+    qty.set(it.styleId, sum);
+  }
+  return order.map((id) => ({ styleId: id, quantity: qty.get(id) ?? 1 }));
+}
 
 @Injectable()
 export class BookingsService {
@@ -81,6 +97,27 @@ export class BookingsService {
 
   private accessLog(action: string, meta: Record<string, string>): void {
     this.logger.log(`${action} ${JSON.stringify(meta)}`);
+  }
+
+  /** Correlate logs with `bookingId` and enabled channels (no PII). */
+  private logBookingNotifyIntent(
+    phase:
+      | 'shop_booking_created'
+      | 'customer_booking_confirmed'
+      | 'customer_payment_confirmed'
+      | 'customer_thank_you',
+    bookingId: string,
+    flags: { sms: boolean; email: boolean },
+  ): void {
+    this.logger.log(
+      JSON.stringify({
+        event: 'booking_notify_intent',
+        phase,
+        bookingId,
+        sms: flags.sms,
+        email: flags.email,
+      }),
+    );
   }
 
   private isPgUniqueViolation(err: unknown): boolean {
@@ -119,7 +156,7 @@ export class BookingsService {
     const targetMs = targetSlotStartUtc.getTime();
     const rows = await manager.query<{ c: string | number }[]>(
       `
-      SELECT COUNT(DISTINCT b.id)::int AS c
+      SELECT COALESCE(SUM(bs.quantity), 0)::int AS c
       FROM bookings b
       INNER JOIN booking_styles bs ON bs."bookingId" = b.id
       INNER JOIN styles st ON st.id = bs."styleId"
@@ -161,9 +198,27 @@ export class BookingsService {
     );
   }
 
+  private computeTotalDueFromStyleRows(row: BookingEntity): number {
+    const links =
+      row.bookingStyles?.filter((l): l is typeof l & { style: StyleEntity } =>
+        Boolean(l.style),
+      ) ?? [];
+    if (links.length > 0) {
+      return sumStyleLinePricesCents(
+        links.map((l) => ({
+          priceCents: l.style.priceCents,
+          quantity: l.quantity ?? 1,
+        })),
+      );
+    }
+    if (row.style) {
+      return row.style.priceCents ?? 0;
+    }
+    return 0;
+  }
+
   private resolveTotalDueCents(row: BookingEntity): number {
-    const styles = this.bookingStyleEntities(row);
-    return row.totalDueCents ?? sumStylePricesCents(styles);
+    return row.totalDueCents ?? this.computeTotalDueFromStyleRows(row);
   }
 
   private computeOutstandingCents(row: BookingEntity): number {
@@ -173,11 +228,16 @@ export class BookingsService {
   }
 
   /** Updates payment fields from current style prices and paid amount (e.g. after editing services). */
-  private applyPricingFromStyles(
+  private applyPricingFromMergedLines(
     row: BookingEntity,
-    styles: StyleEntity[],
+    lines: { style: StyleEntity; quantity: number }[],
   ): void {
-    const total = sumStylePricesCents(styles);
+    const total = sumStyleLinePricesCents(
+      lines.map((l) => ({
+        priceCents: l.style.priceCents,
+        quantity: l.quantity,
+      })),
+    );
     row.totalDueCents = total;
     if (!bookingRequiresCardPayment(total)) {
       row.paymentStatus = BookingPaymentStatus.NOT_REQUIRED;
@@ -287,11 +347,13 @@ export class BookingsService {
         scheduledAt: string | Date;
         styleId: string;
         durationMinutes: string | null;
+        quantity: string | number | null;
       }[]
     >(
       `
       SELECT b."scheduledAt" AS "scheduledAt", bs."styleId" AS "styleId",
-             st."durationMinutes" AS "durationMinutes"
+             st."durationMinutes" AS "durationMinutes",
+             COALESCE(bs.quantity, 1) AS "quantity"
       FROM bookings b
       INNER JOIN booking_styles bs ON bs."bookingId" = b.id
       INNER JOIN styles st ON st.id = bs."styleId"
@@ -320,6 +382,12 @@ export class BookingsService {
     for (const r of raw) {
       const scheduledAt = new Date(r.scheduledAt);
       const styleId = r.styleId;
+      const qRaw = r.quantity;
+      const lineQty =
+        typeof qRaw === 'string'
+          ? Number(qRaw)
+          : (qRaw ?? 1);
+      const qty = Math.min(99, Math.max(1, Math.floor(Number.isFinite(lineQty) ? lineQty : 1)));
       const durMin =
         r.durationMinutes != null && r.durationMinutes !== ''
           ? Number(r.durationMinutes)
@@ -334,7 +402,7 @@ export class BookingsService {
         }
         const slotStart = slot.toISOString();
         const cur = bySlot.get(slotStart) ?? {};
-        cur[styleId] = (cur[styleId] ?? 0) + 1;
+        cur[styleId] = (cur[styleId] ?? 0) + qty;
         bySlot.set(slotStart, cur);
       }
     }
@@ -346,20 +414,17 @@ export class BookingsService {
 
   async createForUser(
     clerkUserId: string,
-    input: { scheduledAt: string; notes?: string; styleIds: string[] },
+    input: {
+      scheduledAt: string;
+      notes?: string;
+      styleLineItems: { styleId: string; quantity: number }[];
+    },
   ): Promise<BookingResponse> {
-    const seen = new Set<string>();
-    const orderedUniqueIds: string[] = [];
-    for (const id of input.styleIds) {
-      if (!seen.has(id)) {
-        seen.add(id);
-        orderedUniqueIds.push(id);
-      }
-    }
+    const merged = mergeStyleLineItems(input.styleLineItems);
 
     this.accessLog('bookings_create_for_user', {
       clerkUserId,
-      styleIds: orderedUniqueIds.join(','),
+      styleIds: merged.map((m) => `${m.styleId}:${m.quantity}`).join(','),
       scheduledAt: input.scheduledAt,
     });
     const publicSettings = await this.siteSettings.getPublic();
@@ -379,19 +444,24 @@ export class BookingsService {
       const styleRepo = qr.manager.getRepository(StyleEntity);
       const linkRepo = qr.manager.getRepository(BookingStyleEntity);
 
-      const orderedStyles: StyleEntity[] = [];
-      for (const styleId of orderedUniqueIds) {
+      const orderedLines: { style: StyleEntity; quantity: number }[] = [];
+      for (const line of merged) {
         const style = await styleRepo.findOne({
-          where: { id: styleId, isActive: true },
+          where: { id: line.styleId, isActive: true },
         });
         if (!style) {
           throw new BadRequestException('Invalid or inactive style.');
         }
-        orderedStyles.push(style);
+        orderedLines.push({ style, quantity: line.quantity });
       }
 
-      const primaryStyle = orderedStyles[0];
-      const totalCents = sumStylePricesCents(orderedStyles);
+      const primaryStyle = orderedLines[0].style;
+      const totalCents = sumStyleLinePricesCents(
+        orderedLines.map((l) => ({
+          priceCents: l.style.priceCents,
+          quantity: l.quantity,
+        })),
+      );
       needsCardPayment = bookingRequiresCardPayment(totalCents);
 
       const slotStepMs = bookingSlotStepMs(publicSettings);
@@ -399,7 +469,7 @@ export class BookingsService {
       const sessionMin = publicSettings.bookingSessionMinutes;
       const seats = publicSettings.bookingConcurrentSeatsPerSlot;
       const floorSlot = floorToSlotUtc(scheduledAt, slotStepMs);
-      for (const style of orderedStyles) {
+      for (const { style, quantity } of orderedLines) {
         const durMin = style.durationMinutes ?? sessionMin;
         const span = slotSpanForStyleMinutes(durMin, slotStepMin);
         for (let i = 0; i < span; i++) {
@@ -411,7 +481,7 @@ export class BookingsService {
             publicSettings,
             undefined,
           );
-          if (used >= seats) {
+          if (used + quantity > seats) {
             throw new ConflictException(
               'This time slot is no longer available. Pick another date or time.',
             );
@@ -450,10 +520,11 @@ export class BookingsService {
         );
       })();
 
-      for (const s of orderedStyles) {
+      for (const line of orderedLines) {
         await linkRepo.insert({
           bookingId: saved.id,
-          styleId: s.id,
+          styleId: line.style.id,
+          quantity: line.quantity,
         });
       }
 
@@ -477,16 +548,18 @@ export class BookingsService {
     );
     if (!needsCardPayment) {
       const flags = await this.siteSettings.getNotificationFlags();
+      const shopFlags = {
+        sms: flags.smsBookingNotificationsEnabled,
+        email: flags.emailBookingNotificationsEnabled,
+      };
+      this.logBookingNotifyIntent('shop_booking_created', withCode.id, shopFlags);
       await this.notifications.notifyBookingCreated(
         {
           clerkUserId,
           scheduledAtIso: saved.scheduledAt.toISOString(),
           hasNotes: notesPlain.length > 0,
         },
-        {
-          sms: flags.smsBookingNotificationsEnabled,
-          email: flags.emailBookingNotificationsEnabled,
-        },
+        shopFlags,
       );
       const contact = await this.clerkUsers.getContact(clerkUserId);
       const publicSettings = await this.siteSettings.getPublic();
@@ -496,13 +569,15 @@ export class BookingsService {
         bookingSlotStepMs(publicSettings),
         publicSettings.bookingSessionMinutes,
       );
+      this.logBookingNotifyIntent(
+        'customer_booking_confirmed',
+        withCode.id,
+        shopFlags,
+      );
       await this.notifications.notifyBookingConfirmedToCustomer(
         contact,
         customerPayload,
-        {
-          sms: flags.smsBookingNotificationsEnabled,
-          email: flags.emailBookingNotificationsEnabled,
-        },
+        shopFlags,
       );
     }
     this.auditLog('booking_created', {
@@ -516,14 +591,18 @@ export class BookingsService {
   async updateForUser(
     clerkUserId: string,
     bookingId: string,
-    input: { scheduledAt?: string; notes?: string; styleIds?: string[] },
+    input: {
+      scheduledAt?: string;
+      notes?: string;
+      styleLineItems?: { styleId: string; quantity: number }[];
+    },
   ): Promise<BookingResponse> {
     this.accessLog('bookings_update_for_user', {
       clerkUserId,
       bookingId,
       hasScheduledAt: String(input.scheduledAt !== undefined),
       hasNotes: String(input.notes !== undefined),
-      hasStyleIds: String(input.styleIds !== undefined),
+      hasStyleLineItems: String(input.styleLineItems !== undefined),
     });
     const pre = await this.bookings.findOne({
       where: { id: bookingId, clerkUserId },
@@ -562,21 +641,26 @@ export class BookingsService {
       if (!existing) {
         throw new NotFoundException('Booking not found');
       }
-      const capacityStyleIds: string[] = [];
-      if (input.styleIds !== undefined) {
-        const seen = new Set<string>();
-        for (const id of input.styleIds) {
-          if (!seen.has(id)) {
-            seen.add(id);
-            capacityStyleIds.push(id);
+      let orderedLines: { style: StyleEntity; quantity: number }[] = [];
+      if (input.styleLineItems !== undefined) {
+        const merged = mergeStyleLineItems(input.styleLineItems);
+        for (const line of merged) {
+          const style = await styleRepo.findOne({
+            where: { id: line.styleId, isActive: true },
+          });
+          if (!style) {
+            throw new BadRequestException('Invalid or inactive style.');
           }
+          orderedLines.push({ style, quantity: line.quantity });
         }
       } else {
         const links = await linkRepo.find({
           where: { bookingId },
-          select: ['styleId'],
+          relations: ['style'],
         });
-        capacityStyleIds.push(...links.map((l) => l.styleId));
+        orderedLines = links
+          .filter((l): l is typeof l & { style: StyleEntity } => Boolean(l.style))
+          .map((l) => ({ style: l.style, quantity: l.quantity ?? 1 }));
       }
       const publicForSlot = await this.siteSettings.getPublic();
       const slotStepMs = bookingSlotStepMs(publicForSlot);
@@ -585,28 +669,7 @@ export class BookingsService {
       const floorSlot = floorToSlotUtc(nextScheduled, slotStepMs);
       const seats = publicForSlot.bookingConcurrentSeatsPerSlot;
 
-      const capacityStyles: StyleEntity[] = [];
-      if (input.styleIds !== undefined) {
-        for (const sid of capacityStyleIds) {
-          const style = await styleRepo.findOne({
-            where: { id: sid, isActive: true },
-          });
-          if (!style) {
-            throw new BadRequestException('Invalid or inactive style.');
-          }
-          capacityStyles.push(style);
-        }
-      } else {
-        for (const sid of capacityStyleIds) {
-          const style = await styleRepo.findOne({ where: { id: sid } });
-          if (!style) {
-            throw new BadRequestException('Invalid or inactive style.');
-          }
-          capacityStyles.push(style);
-        }
-      }
-
-      for (const style of capacityStyles) {
+      for (const { style, quantity } of orderedLines) {
         const durMin = style.durationMinutes ?? sessionMin;
         const span = slotSpanForStyleMinutes(durMin, slotStepMin);
         for (let i = 0; i < span; i++) {
@@ -618,7 +681,7 @@ export class BookingsService {
             publicForSlot,
             bookingId,
           );
-          if (used >= seats) {
+          if (used + quantity > seats) {
             throw new ConflictException(
               'This time slot is no longer available. Pick another date or time.',
             );
@@ -636,17 +699,18 @@ export class BookingsService {
       existing.scheduledAt = nextScheduled;
       existing.notes = notesPlain;
 
-      if (input.styleIds !== undefined) {
-        const primaryStyle = capacityStyles[0];
+      if (input.styleLineItems !== undefined) {
+        const primaryStyle = orderedLines[0].style;
         await linkRepo.delete({ bookingId: existing.id });
-        for (const s of capacityStyles) {
+        for (const line of orderedLines) {
           await linkRepo.insert({
             bookingId: existing.id,
-            styleId: s.id,
+            styleId: line.style.id,
+            quantity: line.quantity,
           });
         }
         existing.style = primaryStyle;
-        this.applyPricingFromStyles(existing, capacityStyles);
+        this.applyPricingFromMergedLines(existing, orderedLines);
       }
 
       await repo.save(existing);
@@ -702,10 +766,12 @@ export class BookingsService {
         bookingSlotStepMs(publicSettings),
         publicSettings.bookingSessionMinutes,
       );
-      await this.notifications.notifyBookingThankYou(contact, payload, {
+      const thankYouFlags = {
         sms: flags.smsThankYouReceiptEnabled,
         email: flags.emailThankYouReceiptEnabled,
-      });
+      };
+      this.logBookingNotifyIntent('customer_thank_you', rowWithCode.id, thankYouFlags);
+      await this.notifications.notifyBookingThankYou(contact, payload, thankYouFlags);
       rowWithCode.thankYouSentAt = new Date();
       await this.bookings.save(rowWithCode);
       await this.cache.del(cacheKeys.bookingsList(rowWithCode.clerkUserId));
@@ -766,7 +832,6 @@ export class BookingsService {
         'Payment can only be collected for bookings with an outstanding balance.',
       );
     }
-    const styleEntities = this.bookingStyleEntities(row);
     const totalDue = this.resolveTotalDueCents(row);
     if (!bookingRequiresCardPayment(totalDue)) {
       throw new BadRequestException(
@@ -939,16 +1004,18 @@ export class BookingsService {
     }
     const withCode = await persistBookingCodeIfMissing(this.bookings, reloaded);
     const flags = await this.siteSettings.getNotificationFlags();
+    const shopFlags = {
+      sms: flags.smsBookingNotificationsEnabled,
+      email: flags.emailBookingNotificationsEnabled,
+    };
+    this.logBookingNotifyIntent('shop_booking_created', withCode.id, shopFlags);
     await this.notifications.notifyBookingCreated(
       {
         clerkUserId: withCode.clerkUserId,
         scheduledAtIso: withCode.scheduledAt.toISOString(),
         hasNotes: (withCode.notes ?? '').length > 0,
       },
-      {
-        sms: flags.smsBookingNotificationsEnabled,
-        email: flags.emailBookingNotificationsEnabled,
-      },
+      shopFlags,
     );
     const publicSettings = await this.siteSettings.getPublic();
     const contact = await this.clerkUsers.getContact(withCode.clerkUserId);
@@ -964,13 +1031,19 @@ export class BookingsService {
         paymentStatus: withCode.paymentStatus,
       },
     );
+    const paymentConfirmedFlags = {
+      sms: flags.smsPaymentConfirmedEnabled,
+      email: flags.emailPaymentConfirmedEnabled,
+    };
+    this.logBookingNotifyIntent(
+      'customer_payment_confirmed',
+      withCode.id,
+      paymentConfirmedFlags,
+    );
     await this.notifications.notifyBookingPaymentConfirmed(
       contact,
       paymentPayload,
-      {
-        sms: flags.smsPaymentConfirmedEnabled,
-        email: flags.emailPaymentConfirmedEnabled,
-      },
+      paymentConfirmedFlags,
     );
     withCode.paymentConfirmationSentAt = new Date();
     await this.bookings.save(withCode);
@@ -980,20 +1053,10 @@ export class BookingsService {
     });
   }
 
-  private bookingStyleEntities(row: BookingEntity): StyleEntity[] {
-    const fromLinks =
-      row.bookingStyles
-        ?.filter((l): l is typeof l & { style: StyleEntity } =>
-          Boolean(l.style),
-        )
-        .map((l) => l.style) ?? [];
-    if (fromLinks.length > 0) {
-      return fromLinks;
-    }
-    return row.style ? [row.style] : [];
-  }
-
-  private styleToSummary(style: StyleEntity | null): BookingResponse['style'] {
+  private styleToSummary(
+    style: StyleEntity | null,
+    quantity = 1,
+  ): NonNullable<BookingResponse['style']> | null {
     if (!style) return null;
     return {
       id: style.id,
@@ -1003,6 +1066,7 @@ export class BookingsService {
       priceCents: style.priceCents,
       durationMinutes: style.durationMinutes ?? null,
       category: style.category,
+      quantity,
     };
   }
 
@@ -1012,11 +1076,11 @@ export class BookingsService {
         ?.filter((l): l is typeof l & { style: StyleEntity } =>
           Boolean(l.style),
         )
-        .map((l) => this.styleToSummary(l.style)!) ?? [];
+        .map((l) => this.styleToSummary(l.style, l.quantity ?? 1)!) ?? [];
     if (fromLinks.length > 0) {
       return [...fromLinks].sort((a, b) => a.name.localeCompare(b.name));
     }
-    const single = this.styleToSummary(row.style ?? null);
+    const single = this.styleToSummary(row.style ?? null, 1);
     return single ? [single] : [];
   }
 
@@ -1026,9 +1090,11 @@ export class BookingsService {
     const styleId = styles[0]?.id ?? row.style?.id ?? null;
     const styleName =
       styles.length > 0
-        ? styles.map((s) => s.name).join(' · ')
+        ? styles
+            .map((s) => (s.quantity > 1 ? `${s.name} × ${s.quantity}` : s.name))
+            .join(' · ')
         : (row.style?.name ?? null);
-    const style = styles[0] ?? this.styleToSummary(row.style ?? null);
+    const style = styles[0] ?? this.styleToSummary(row.style ?? null, 1);
     const totalDue = this.resolveTotalDueCents(row);
     const outstanding = this.computeOutstandingCents(row);
     const paymentStatus =

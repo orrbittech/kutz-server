@@ -16,10 +16,15 @@ const bookingPaymentStatusZ = z.enum([
   BookingPaymentStatus.NOT_REQUIRED,
 ]);
 
+export const styleLineItemSchema = z.object({
+  styleId: z.string().uuid(),
+  quantity: z.coerce.number().int().min(1).max(99),
+});
+
 export const createBookingSchema = z.object({
   scheduledAt: z.string().datetime({ offset: true }),
   notes: z.string().max(2000).optional(),
-  styleIds: z.array(z.string().uuid()).min(1).max(32),
+  styleLineItems: z.array(styleLineItemSchema).min(1).max(32),
 });
 
 export class CreateBookingBodyDto extends createZodDto(createBookingSchema) {}
@@ -28,15 +33,15 @@ export const updateBookingSchema = z
   .object({
     scheduledAt: z.string().datetime({ offset: true }).optional(),
     notes: z.string().max(2000).optional(),
-    styleIds: z.array(z.string().uuid()).min(1).max(32).optional(),
+    styleLineItems: z.array(styleLineItemSchema).min(1).max(32).optional(),
   })
   .refine(
     (data) =>
       data.scheduledAt !== undefined ||
       data.notes !== undefined ||
-      data.styleIds !== undefined,
+      data.styleLineItems !== undefined,
     {
-      message: 'Provide scheduledAt, notes, and/or styleIds',
+      message: 'Provide scheduledAt, notes, and/or styleLineItems',
     },
   );
 
@@ -59,6 +64,7 @@ export const bookingStyleSummarySchema = z.object({
   priceCents: z.number().int().nullable(),
   durationMinutes: z.number().int().nullable(),
   category: styleCategoryZ,
+  quantity: z.number().int().min(1).max(99),
 });
 
 export const bookingResponseSchema = z.object({
