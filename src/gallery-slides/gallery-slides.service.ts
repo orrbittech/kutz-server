@@ -24,6 +24,11 @@ export class GallerySlidesService {
     this.logger.log(`${action} ${JSON.stringify(meta)}`);
   }
 
+  /** Invalidate after admin writes; catalog changed only via DB/migrations stays fresh within CACHE_TTL_MS. */
+  private async invalidateActiveListCache(): Promise<void> {
+    await this.cache.del(cacheKeys.gallerySlidesActive());
+  }
+
   async listActive(): Promise<GallerySlideResponse[]> {
     this.accessLog('gallery_slides_list_active', {});
     const ttl = getCacheTtlMs(this.config);

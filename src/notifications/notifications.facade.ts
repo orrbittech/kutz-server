@@ -43,10 +43,14 @@ export class NotificationsFacade {
   ): Promise<void> {
     const tasks: Promise<void>[] = [];
     if (flags.sms && contact.phoneE164) {
-      tasks.push(this.sms.sendBookingConfirmedCustomer(contact.phoneE164, payload));
+      tasks.push(
+        this.sms.sendBookingConfirmedCustomer(contact.phoneE164, payload),
+      );
     }
     if (flags.email && contact.email) {
-      tasks.push(this.customerEmail.sendBookingConfirmed(contact.email, payload));
+      tasks.push(
+        this.customerEmail.sendBookingConfirmed(contact.email, payload),
+      );
     }
     await Promise.all(tasks);
   }
@@ -83,7 +87,9 @@ export class NotificationsFacade {
       );
     }
     if (flags.email && contact.email) {
-      tasks.push(this.customerEmail.sendBookingThankYou(contact.email, payload));
+      tasks.push(
+        this.customerEmail.sendBookingThankYou(contact.email, payload),
+      );
     }
     await Promise.all(tasks);
   }

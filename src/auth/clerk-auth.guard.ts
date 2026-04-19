@@ -7,6 +7,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { verifyToken } from '@clerk/backend';
 import type { Request } from 'express';
+import { isAdminClerkUser } from './clerk-admin.util';
 import type { ClerkRequestUser } from './clerk-user.types';
 
 @Injectable()
@@ -32,7 +33,9 @@ export class ClerkAuthGuard implements CanActivate {
       if (!sub) {
         throw new UnauthorizedException('Invalid token subject');
       }
-      request.user = { clerkUserId: sub };
+      const adminIdsCsv = this.config.get<string>('ADMIN_CLERK_USER_IDS');
+      const isAdmin = isAdminClerkUser(sub, payload, adminIdsCsv);
+      request.user = { clerkUserId: sub, isAdmin };
       return true;
     } catch {
       throw new UnauthorizedException('Invalid or expired token');

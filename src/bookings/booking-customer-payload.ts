@@ -33,9 +33,7 @@ export function buildBookingCustomerPayload(
 ): BookingCustomerPayload {
   const styles = collectStyles(row);
   const styleNames =
-    styles.length > 0
-      ? styles.map((s) => s.name).join(' · ')
-      : 'Appointment';
+    styles.length > 0 ? styles.map((s) => s.name).join(' · ') : 'Appointment';
   const scheduledAtIso = row.scheduledAt.toISOString();
   const slotStart = floorToSlotUtc(row.scheduledAt, slotStepMs);
   const serviceEndIso = serviceEndUtc(slotStart, sessionMinutes).toISOString();

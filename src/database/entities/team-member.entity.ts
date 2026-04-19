@@ -2,11 +2,13 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  Index,
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
 
 @Entity({ name: 'team_members' })
+@Index('idx_team_members_active_sort_order', ['isActive', 'sortOrder'])
 export class TeamMemberEntity {
   @PrimaryGeneratedColumn('uuid')
   id!: string;

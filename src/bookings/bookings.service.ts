@@ -22,6 +22,7 @@ import { BookingPaymentStatus, BookingStatus } from '../domain/enums';
 import { NotificationsFacade } from '../notifications/notifications.facade';
 import type { SiteSettingsPublic } from '../site-settings/schemas/site-settings.zod';
 import { SiteSettingsService } from '../site-settings/site-settings.service';
+import type { ClerkRequestUser } from '../auth/clerk-user.types';
 import { StripeService } from '../stripe/stripe.service';
 import {
   bookingRequiresCardPayment,
@@ -85,8 +86,7 @@ export class BookingsService {
   private isPgUniqueViolation(err: unknown): boolean {
     return (
       err instanceof QueryFailedError &&
-      (err as { driverError?: { code?: string } }).driverError?.code ===
-        '23505'
+      (err as { driverError?: { code?: string } }).driverError?.code === '23505'
     );
   }
 
@@ -149,7 +149,9 @@ export class BookingsService {
     return typeof c === 'string' ? Number(c) : (c ?? 0);
   }
 
-  private parseSucceededPaymentIntentIds(raw: string | null | undefined): Set<string> {
+  private parseSucceededPaymentIntentIds(
+    raw: string | null | undefined,
+  ): Set<string> {
     if (!raw?.trim()) return new Set();
     return new Set(
       raw
@@ -171,7 +173,10 @@ export class BookingsService {
   }
 
   /** Updates payment fields from current style prices and paid amount (e.g. after editing services). */
-  private applyPricingFromStyles(row: BookingEntity, styles: StyleEntity[]): void {
+  private applyPricingFromStyles(
+    row: BookingEntity,
+    styles: StyleEntity[],
+  ): void {
     const total = sumStylePricesCents(styles);
     row.totalDueCents = total;
     if (!bookingRequiresCardPayment(total)) {
@@ -225,8 +230,23 @@ export class BookingsService {
     return scheduledAt;
   }
 
+  async listForActor(user: ClerkRequestUser): Promise<BookingResponse[]> {
+    if (user.isAdmin) {
+      this.accessLog('bookings_list', {
+        clerkUserId: user.clerkUserId,
+        scope: 'all',
+      });
+      const rows = await this.bookings.find({
+        relations: ['style', 'bookingStyles', 'bookingStyles.style'],
+        order: { createdAt: 'DESC' },
+      });
+      return Promise.all(rows.map((row) => this.finalizeResponse(row)));
+    }
+    return this.listForUser(user.clerkUserId);
+  }
+
   async listForUser(clerkUserId: string): Promise<BookingResponse[]> {
-    this.accessLog('bookings_list_for_user', { clerkUserId });
+    this.accessLog('bookings_list', { clerkUserId, scope: 'own' });
     const ttl = getCacheTtlMs(this.config);
     return this.cache.wrap(
       cacheKeys.bookingsList(clerkUserId),
@@ -370,7 +390,7 @@ export class BookingsService {
         orderedStyles.push(style);
       }
 
-      const primaryStyle = orderedStyles[0]!;
+      const primaryStyle = orderedStyles[0];
       const totalCents = sumStylePricesCents(orderedStyles);
       needsCardPayment = bookingRequiresCardPayment(totalCents);
 
@@ -451,7 +471,10 @@ export class BookingsService {
       relations: ['style', 'bookingStyles', 'bookingStyles.style'],
     });
     const rowForNotify = withRelations ?? saved;
-    const withCode = await persistBookingCodeIfMissing(this.bookings, rowForNotify);
+    const withCode = await persistBookingCodeIfMissing(
+      this.bookings,
+      rowForNotify,
+    );
     if (!needsCardPayment) {
       const flags = await this.siteSettings.getNotificationFlags();
       await this.notifications.notifyBookingCreated(
@@ -614,7 +637,7 @@ export class BookingsService {
       existing.notes = notesPlain;
 
       if (input.styleIds !== undefined) {
-        const primaryStyle = capacityStyles[0]!;
+        const primaryStyle = capacityStyles[0];
         await linkRepo.delete({ bookingId: existing.id });
         for (const s of capacityStyles) {
           await linkRepo.insert({
@@ -685,6 +708,7 @@ export class BookingsService {
       });
       rowWithCode.thankYouSentAt = new Date();
       await this.bookings.save(rowWithCode);
+      await this.cache.del(cacheKeys.bookingsList(rowWithCode.clerkUserId));
     }
 
     const fresh = await this.bookings.findOne({
@@ -766,6 +790,7 @@ export class BookingsService {
       if (existing.status === 'succeeded') {
         row.stripePaymentIntentId = null;
         await this.bookings.save(row);
+        await this.cache.del(cacheKeys.bookingsList(clerkUserId));
       } else {
         const payable = new Set([
           'requires_payment_method',
@@ -802,6 +827,7 @@ export class BookingsService {
     row.stripePaymentIntentId = pi.id;
     row.paymentAmountCents = outstanding;
     await this.bookings.save(row);
+    await this.cache.del(cacheKeys.bookingsList(clerkUserId));
 
     return {
       clientSecret: pi.client_secret,
@@ -938,10 +964,14 @@ export class BookingsService {
         paymentStatus: withCode.paymentStatus,
       },
     );
-    await this.notifications.notifyBookingPaymentConfirmed(contact, paymentPayload, {
-      sms: flags.smsPaymentConfirmedEnabled,
-      email: flags.emailPaymentConfirmedEnabled,
-    });
+    await this.notifications.notifyBookingPaymentConfirmed(
+      contact,
+      paymentPayload,
+      {
+        sms: flags.smsPaymentConfirmedEnabled,
+        email: flags.emailPaymentConfirmedEnabled,
+      },
+    );
     withCode.paymentConfirmationSentAt = new Date();
     await this.bookings.save(withCode);
     this.auditLog('booking_payment_succeeded', {
@@ -979,7 +1009,9 @@ export class BookingsService {
   private stylesForResponse(row: BookingEntity): BookingResponse['styles'] {
     const fromLinks: NonNullable<BookingResponse['style']>[] =
       row.bookingStyles
-        ?.filter((l): l is typeof l & { style: StyleEntity } => Boolean(l.style))
+        ?.filter((l): l is typeof l & { style: StyleEntity } =>
+          Boolean(l.style),
+        )
         .map((l) => this.styleToSummary(l.style)!) ?? [];
     if (fromLinks.length > 0) {
       return [...fromLinks].sort((a, b) => a.name.localeCompare(b.name));
@@ -993,7 +1025,9 @@ export class BookingsService {
     const styles = this.stylesForResponse(row);
     const styleId = styles[0]?.id ?? row.style?.id ?? null;
     const styleName =
-      styles.length > 0 ? styles.map((s) => s.name).join(' · ') : (row.style?.name ?? null);
+      styles.length > 0
+        ? styles.map((s) => s.name).join(' · ')
+        : (row.style?.name ?? null);
     const style = styles[0] ?? this.styleToSummary(row.style ?? null);
     const totalDue = this.resolveTotalDueCents(row);
     const outstanding = this.computeOutstandingCents(row);

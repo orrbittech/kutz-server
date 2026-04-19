@@ -32,7 +32,10 @@ const bookingHoursRuleOpenApi = {
   type: 'object',
   required: ['daysOfWeek', 'open', 'close'],
   properties: {
-    daysOfWeek: { type: 'array', items: { type: 'integer', minimum: 0, maximum: 6 } },
+    daysOfWeek: {
+      type: 'array',
+      items: { type: 'integer', minimum: 0, maximum: 6 },
+    },
     open: { type: 'string' },
     close: { type: 'string' },
   },
@@ -193,7 +196,8 @@ export const bookingResponseOpenApiSchema = {
     styles: {
       type: 'array',
       items: bookingStyleSummaryOpenApiSchema,
-      description: 'All services booked for this appointment (primary style is styles[0] when present)',
+      description:
+        'All services booked for this appointment (primary style is styles[0] when present)',
     },
     stripePaymentIntentId: { type: 'string', nullable: true },
     paymentAmountCents: { type: 'integer', nullable: true },
@@ -230,7 +234,8 @@ export const bookingOccupancySlotOpenApiSchema = {
     byStyleId: {
       type: 'object',
       additionalProperties: { type: 'integer', minimum: 0 },
-      description: 'PENDING+CONFIRMED booking counts per style id for this slot',
+      description:
+        'PENDING+CONFIRMED booking counts per style id for this slot',
     },
   },
 };
@@ -272,7 +277,8 @@ export const styleResponseOpenApiSchema = {
     durationMinutes: {
       type: 'integer',
       nullable: true,
-      description: 'Service duration in minutes; defaults to site session length when null',
+      description:
+        'Service duration in minutes; defaults to site session length when null',
     },
     category: {
       type: 'string',

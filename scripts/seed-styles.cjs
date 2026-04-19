@@ -1,18 +1,28 @@
 'use strict';
 
 /**
- * Clears then reapplies styles, team roster, gallery slides, and default site booking hours using the same DATABASE_URL as the Nest app (server/.env).
+ * Full wipe then reapplies styles, team roster, gallery slides, and default site booking hours using the same DATABASE_URL as the Nest app (server/.env).
  *
- * Cleanup: deletes all rows from `gallery_slides`, `team_members`, and `styles` (in an order safe for FKs).
- * Deleting `styles` cascades to `booking_styles` and sets `bookings.styleId` to NULL (ON DELETE SET NULL).
+ * Cleanup: drops named performance indexes (see sql/drop-performance-indexes.sql), then TRUNCATE all application tables (bookings, orders, catalog, site_settings, etc.) with RESTART IDENTITY CASCADE so every seed starts from an empty database. Recreates indexes after seed SQL via sql/apply-performance-indexes-sync.sql.
  *
- * Gallery imageUrl values are paths like /images/gallery/01.jpg (served from web/public).
+ * Gallery imageUrl values are https://images.unsplash.com/... (see migrations/008_gallery_slides.sql).
  * Does not require the `psql` CLI — uses the `pg` package.
  */
 
 const { readFileSync, existsSync } = require('fs');
 const { join } = require('path');
 const { Client } = require('pg');
+
+/** Tables matching TypeORM entities in src/database/entities (public schema). */
+const APP_TABLES = [
+  'booking_styles',
+  'bookings',
+  'orders',
+  'gallery_slides',
+  'team_members',
+  'styles',
+  'site_settings',
+];
 
 function loadEnvFile() {
   const envPath = join(__dirname, '..', '.env');
@@ -35,6 +45,22 @@ function loadEnvFile() {
   }
 }
 
+/** Logs host and database name from DATABASE_URL (no credentials). */
+function logDatabaseTarget(connectionString) {
+  try {
+    const normalized = connectionString.replace(/^postgres(ql)?:/i, 'http:');
+    const u = new URL(normalized);
+    const host = u.hostname || '(unknown)';
+    const db = u.pathname ? u.pathname.replace(/^\//, '').split('/')[0] : '';
+    const port = u.port ? `:${u.port}` : '';
+    console.log(
+      `[seed] Target DB: host ${host}${port}${db ? `, database ${db}` : ''}`,
+    );
+  } catch {
+    console.warn('[seed] Could not parse DATABASE_URL for logging (proceeding).');
+  }
+}
+
 async function main() {
   loadEnvFile();
   const url = process.env.DATABASE_URL;
@@ -44,6 +70,8 @@ async function main() {
     );
     process.exit(1);
   }
+
+  logDatabaseTarget(url);
 
   const client = new Client({ connectionString: url });
   await client.connect();
@@ -55,17 +83,21 @@ async function main() {
     '005_team_members.sql',
     '008_gallery_slides.sql',
     '009_booking_hours.sql',
+    '010_ensure_site_settings_default.sql',
     '011_seed_site_settings_booking_hours.sql',
   ];
 
   try {
-    await clearMarketingSeedTables(client);
+    await dropPerformanceIndexes(client);
+    await truncateAllAppTables(client);
 
     for (const file of files) {
       const sql = readFileSync(join(migrationsDir, file), 'utf8');
       await client.query(sql);
       console.log('Applied:', file);
     }
+
+    await createPerformanceIndexes(client);
     console.log('Styles, team, gallery, and site booking hours seed finished.');
   } finally {
     await client.end();
@@ -73,50 +105,59 @@ async function main() {
 }
 
 /**
- * Removes existing seed data so the following INSERTs start from an empty catalog.
- * Safe for bookings: `styles` delete cascades `booking_styles` and nulls `bookings.styleId`.
- * Skips tables that do not exist yet (e.g. first run before `008_gallery_slides.sql` has created `gallery_slides`).
+ * Removes all rows from every app table so the following SQL runs against an empty database.
+ * Skips tables that do not exist yet (partial schema); truncates only those that exist.
  */
-async function clearMarketingSeedTables(client) {
+async function dropPerformanceIndexes(client) {
+  const dropPath = join(sqlDirForSeed(), 'drop-performance-indexes.sql');
+  if (!existsSync(dropPath)) {
+    console.warn('[seed] Missing sql/drop-performance-indexes.sql; skipping index drop.');
+    return;
+  }
+  const sql = readFileSync(dropPath, 'utf8');
+  await client.query(sql);
+  console.log('[seed] Dropped performance indexes (if they existed).');
+}
+
+async function createPerformanceIndexes(client) {
+  const createPath = join(sqlDirForSeed(), 'apply-performance-indexes-sync.sql');
+  if (!existsSync(createPath)) {
+    console.warn('[seed] Missing sql/apply-performance-indexes-sync.sql; skipping index create.');
+    return;
+  }
+  const sql = readFileSync(createPath, 'utf8');
+  await client.query(sql);
+  console.log('[seed] Recreated performance indexes.');
+}
+
+function sqlDirForSeed() {
+  return join(__dirname, '..', 'sql');
+}
+
+async function truncateAllAppTables(client) {
   const { rows } = await client.query(
     `
     SELECT tablename FROM pg_tables
     WHERE schemaname = 'public'
       AND tablename = ANY($1::text[])
     `,
-    [['gallery_slides', 'team_members', 'styles']],
+    [APP_TABLES],
   );
-  const present = new Set(rows.map((r) => r.tablename));
-  if (present.size === 0) {
+  const present = rows.map((r) => r.tablename);
+  if (present.length === 0) {
     console.warn(
-      'No marketing seed tables found yet (gallery_slides, team_members, styles); skipping clear.',
+      '[seed] No application tables found yet; skipping truncate. Create the schema (e.g. run the API with synchronize), then run this script again.',
     );
     return;
   }
 
-  const statements = [];
-  if (present.has('gallery_slides')) statements.push('DELETE FROM gallery_slides');
-  if (present.has('team_members')) statements.push('DELETE FROM team_members');
-  if (present.has('styles')) statements.push('DELETE FROM styles');
-
-  await client.query('BEGIN');
-  try {
-    await client.query(statements.join(';\n') + ';');
-    await client.query('COMMIT');
-    const cleared = [...present].join(', ');
-    const bookingNote = present.has('styles')
-      ? ' Styles delete cascades booking_styles and sets bookings.styleId to NULL.'
-      : '';
-    console.log(`Cleared rows from: ${cleared}.${bookingNote}`);
-  } catch (err) {
-    await client.query('ROLLBACK');
-    if (err && err.code === '42P01') {
-      console.error(
-        'A required table is missing. Start the Nest API once with TypeORM synchronize enabled in dev, or create the schema, then run this script again.',
-      );
-    }
-    throw err;
-  }
+  const quoted = present
+    .map((t) => `"${String(t).replace(/"/g, '""')}"`)
+    .join(', ');
+  await client.query(
+    `TRUNCATE TABLE ${quoted} RESTART IDENTITY CASCADE`,
+  );
+  console.log('[seed] Truncated tables:', [...present].sort().join(', '));
 }
 
 main().catch((err) => {

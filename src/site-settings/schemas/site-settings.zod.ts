@@ -33,9 +33,7 @@ export const DEFAULT_BOOKING_TIME_ZONE = 'Africa/Johannesburg';
 
 /** Default: every day 07:00–20:00 (JS weekday: 0=Sun … 6=Sat) */
 export const DEFAULT_BOOKING_HOURS: BookingHoursSpec = {
-  rules: [
-    { daysOfWeek: [0, 1, 2, 3, 4, 5, 6], open: '07:00', close: '20:00' },
-  ],
+  rules: [{ daysOfWeek: [0, 1, 2, 3, 4, 5, 6], open: '07:00', close: '20:00' }],
 };
 
 export const siteSettingsPublicSchema = z.object({
@@ -64,10 +62,22 @@ export const siteSettingsPublicSchema = z.object({
   smsPaymentConfirmedEnabled: z.boolean(),
   emailPaymentConfirmedEnabled: z.boolean(),
   /** One appointment block length (minutes); grid uses session + break. */
-  bookingSessionMinutes: z.number().int().min(1).max(24 * 60),
-  bookingBreakMinutes: z.number().int().min(0).max(24 * 60),
+  bookingSessionMinutes: z
+    .number()
+    .int()
+    .min(1)
+    .max(24 * 60),
+  bookingBreakMinutes: z
+    .number()
+    .int()
+    .min(0)
+    .max(24 * 60),
   /** Derived: session + break — minutes between consecutive slot starts. */
-  bookingSlotStepMinutes: z.number().int().min(1).max(24 * 60),
+  bookingSlotStepMinutes: z
+    .number()
+    .int()
+    .min(1)
+    .max(24 * 60),
   bookingConcurrentSeatsPerSlot: z.number().int().min(1).max(500),
 });
 
@@ -99,8 +109,18 @@ export const patchSiteSettingsSchema = z.object({
   emailThankYouReceiptEnabled: z.boolean().optional(),
   smsPaymentConfirmedEnabled: z.boolean().optional(),
   emailPaymentConfirmedEnabled: z.boolean().optional(),
-  bookingSessionMinutes: z.number().int().min(1).max(24 * 60).optional(),
-  bookingBreakMinutes: z.number().int().min(0).max(24 * 60).optional(),
+  bookingSessionMinutes: z
+    .number()
+    .int()
+    .min(1)
+    .max(24 * 60)
+    .optional(),
+  bookingBreakMinutes: z
+    .number()
+    .int()
+    .min(0)
+    .max(24 * 60)
+    .optional(),
   bookingConcurrentSeatsPerSlot: z.number().int().min(1).max(500).optional(),
 });
 
