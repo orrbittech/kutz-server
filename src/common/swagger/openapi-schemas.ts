@@ -149,6 +149,7 @@ export const bookingStyleSummaryOpenApiSchema = {
     'priceCents',
     'durationMinutes',
     'category',
+    'quantity',
   ],
   properties: {
     id: { type: 'string', format: 'uuid' },
@@ -158,6 +159,12 @@ export const bookingStyleSummaryOpenApiSchema = {
     priceCents: { type: 'integer', nullable: true },
     durationMinutes: { type: 'integer', nullable: true },
     category: { type: 'string', enum: ['men', 'women', 'kids'] },
+    quantity: {
+      type: 'integer',
+      minimum: 1,
+      maximum: 99,
+      description: 'How many of this service are booked on the appointment',
+    },
   },
 };
 

@@ -16,13 +16,21 @@ function formatZar(cents: number | null): string {
   }).format(cents / 100);
 }
 
-function collectStyles(row: BookingEntity): StyleEntity[] {
+function collectStyleLines(
+  row: BookingEntity,
+): { style: StyleEntity; quantity: number }[] {
   const fromLinks =
-    row.bookingStyles?.map((l) => l.style).filter(Boolean) ?? [];
+    row.bookingStyles
+      ?.filter((l): l is typeof l & { style: StyleEntity } =>
+        Boolean(l.style),
+      )
+      .map((l) => ({ style: l.style, quantity: l.quantity ?? 1 })) ?? [];
   if (fromLinks.length > 0) {
-    return [...fromLinks].sort((a, b) => a.name.localeCompare(b.name));
+    return [...fromLinks].sort((a, b) =>
+      a.style.name.localeCompare(b.style.name),
+    );
   }
-  return row.style ? [row.style] : [];
+  return row.style ? [{ style: row.style, quantity: 1 }] : [];
 }
 
 export function buildBookingCustomerPayload(
@@ -31,24 +39,39 @@ export function buildBookingCustomerPayload(
   slotStepMs: number,
   sessionMinutes: number,
 ): BookingCustomerPayload {
-  const styles = collectStyles(row);
+  const lines = collectStyleLines(row);
   const styleNames =
-    styles.length > 0 ? styles.map((s) => s.name).join(' · ') : 'Appointment';
+    lines.length > 0
+      ? lines
+          .map(({ style, quantity }) =>
+            quantity > 1 ? `${style.name} × ${quantity}` : style.name,
+          )
+          .join(' · ')
+      : 'Appointment';
   const scheduledAtIso = row.scheduledAt.toISOString();
   const slotStart = floorToSlotUtc(row.scheduledAt, slotStepMs);
   const serviceEndIso = serviceEndUtc(slotStart, sessionMinutes).toISOString();
-  const lines: string[] = [];
+  const receiptLines: string[] = [];
   let totalCents = 0;
-  for (const s of styles) {
-    lines.push(`${s.name}: ${formatZar(s.priceCents)}`);
-    if (s.priceCents != null) {
-      totalCents += s.priceCents;
+  for (const { style, quantity } of lines) {
+    const unit = style.priceCents;
+    const lineTotal =
+      unit != null ? unit * quantity : null;
+    if (lineTotal != null) {
+      totalCents += lineTotal;
+    }
+    if (quantity > 1) {
+      receiptLines.push(
+        `${style.name} × ${quantity}: ${formatZar(lineTotal)}`,
+      );
+    } else {
+      receiptLines.push(`${style.name}: ${formatZar(unit)}`);
     }
   }
   const totalLine =
     totalCents > 0 ? `Total: ${formatZar(totalCents)}` : 'Total: —';
   const receiptSummaryText =
-    lines.length > 0 ? [...lines, totalLine].join('\n') : '—';
+    receiptLines.length > 0 ? [...receiptLines, totalLine].join('\n') : '—';
 
   return {
     bookingId: row.id,
