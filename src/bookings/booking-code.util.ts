@@ -11,7 +11,7 @@ export const BOOKING_CODE_LENGTH = 8;
 export function generateBookingCode(): string {
   let s = '';
   for (let i = 0; i < BOOKING_CODE_LENGTH; i++) {
-    s += BOOKING_CODE_ALPHABET[randomInt(BOOKING_CODE_ALPHABET.length)]!;
+    s += BOOKING_CODE_ALPHABET[randomInt(BOOKING_CODE_ALPHABET.length)];
   }
   return s;
 }

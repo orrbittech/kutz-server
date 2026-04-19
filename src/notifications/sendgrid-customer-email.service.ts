@@ -37,8 +37,7 @@ export class SendgridCustomerEmailService implements CustomerEmailService {
     kind: BookingReminderKind,
     payload: BookingCustomerPayload,
   ): Promise<void> {
-    const when =
-      kind === '1h' ? 'in 1 hour' : 'in 15 minutes';
+    const when = kind === '1h' ? 'in 1 hour' : 'in 15 minutes';
     const subject = `${payload.businessName}: appointment ${when}`;
     const text = [
       `Hi — this is a reminder ${when}.`,

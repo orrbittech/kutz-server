@@ -47,8 +47,9 @@ export class ClerkUsersService {
         null;
 
       const verifiedPhones =
-        user.phoneNumbers?.filter((p) => p.verification?.status === 'verified') ??
-        [];
+        user.phoneNumbers?.filter(
+          (p) => p.verification?.status === 'verified',
+        ) ?? [];
       const phoneE164 =
         verifiedPhones[0]?.phoneNumber ??
         user.phoneNumbers?.[0]?.phoneNumber ??

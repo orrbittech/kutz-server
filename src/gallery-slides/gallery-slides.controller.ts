@@ -11,7 +11,9 @@ export class GallerySlidesController {
   constructor(private readonly gallerySlidesService: GallerySlidesService) {}
 
   @Get()
-  @ApiOperation({ summary: 'List active marketing gallery slides (public read)' })
+  @ApiOperation({
+    summary: 'List active marketing gallery slides (public read)',
+  })
   @ApiValidationOnlyResponse()
   @ApiOkResponse({
     description: 'Active Texture & tone gallery images',

@@ -18,7 +18,7 @@ const unauthorized = {
 };
 
 const forbidden = {
-  description: 'Not in ADMIN_CLERK_USER_IDS',
+  description: 'Not an administrator (Clerk JWT role / metadata or ADMIN_CLERK_USER_IDS)',
   schema: httpErrorOpenApiSchema,
 };
 

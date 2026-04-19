@@ -24,6 +24,11 @@ export class StylesService {
     this.logger.log(`${action} ${JSON.stringify(meta)}`);
   }
 
+  /** Invalidate after admin writes; catalog changed only via DB/migrations stays fresh within CACHE_TTL_MS. */
+  private async invalidateActiveListCache(): Promise<void> {
+    await this.cache.del(cacheKeys.stylesActive());
+  }
+
   async listActive(): Promise<StyleResponse[]> {
     this.accessLog('styles_list_active', {});
     const ttl = getCacheTtlMs(this.config);

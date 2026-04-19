@@ -76,10 +76,7 @@ export class TwilioSmsService implements SmsService {
     await this.sendRaw(to, from, sid, token, body);
   }
 
-  private async sendToCustomer(
-    toE164: string,
-    body: string,
-  ): Promise<void> {
+  private async sendToCustomer(toE164: string, body: string): Promise<void> {
     const from = this.config.get<string>('TWILIO_FROM_NUMBER');
     const sid = this.config.get<string>('TWILIO_ACCOUNT_SID');
     const token = this.config.get<string>('TWILIO_AUTH_TOKEN');

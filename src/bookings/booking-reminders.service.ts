@@ -71,7 +71,10 @@ export class BookingRemindersService {
     for (const row of rows) {
       try {
         const contact = await this.clerkUsers.getContact(row.clerkUserId);
-        const rowWithCode = await persistBookingCodeIfMissing(this.bookings, row);
+        const rowWithCode = await persistBookingCodeIfMissing(
+          this.bookings,
+          row,
+        );
         const payload = buildBookingCustomerPayload(
           rowWithCode,
           publicSettings.businessName,
