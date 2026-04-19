@@ -63,7 +63,7 @@ export class BookingsController {
   @Throttle({ default: { limit: 20, ttl: 60_000 } })
   @ApiOperation({
     summary:
-      'Create a booking (styleIds: one or more services in a single slot; optional notes as plain text)',
+      'Create a booking (styleLineItems: services with per-line quantity; optional notes as plain text)',
   })
   @ApiStandardErrorResponses()
   @ApiCreatedResponse({
@@ -124,7 +124,7 @@ export class BookingsController {
   @Throttle({ default: { limit: 30, ttl: 60_000 } })
   @ApiOperation({
     summary:
-      'Update booking: optional time, notes, and/or services (styleIds replaces linked styles)',
+      'Update booking: optional time, notes, and/or services (styleLineItems replaces linked styles and quantities)',
   })
   @ApiStandardErrorResponses()
   @ApiOkResponse({

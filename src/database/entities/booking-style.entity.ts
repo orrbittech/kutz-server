@@ -1,4 +1,4 @@
-import { Entity, Index, JoinColumn, ManyToOne, PrimaryColumn } from 'typeorm';
+import { Column, Entity, Index, JoinColumn, ManyToOne, PrimaryColumn } from 'typeorm';
 import { BookingEntity } from './booking.entity';
 import { StyleEntity } from './style.entity';
 
@@ -20,4 +20,7 @@ export class BookingStyleEntity {
   @ManyToOne(() => StyleEntity, { onDelete: 'CASCADE', eager: false })
   @JoinColumn({ name: 'styleId' })
   style!: StyleEntity;
+
+  @Column({ type: 'int', default: 1 })
+  quantity!: number;
 }
