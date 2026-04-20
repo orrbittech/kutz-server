@@ -6,6 +6,7 @@ import {
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
+import type { StyleCategory } from '../../domain/style-categories';
 
 @Entity({ name: 'styles' })
 @Index('idx_styles_active_sort_order', ['isActive', 'sortOrder'])
@@ -35,9 +36,9 @@ export class StyleEntity {
   @Column({ type: 'int', nullable: true })
   durationMinutes!: number | null;
 
-  /** Salon catalog segment */
-  @Column({ type: 'varchar', length: 16, default: 'men' })
-  category!: 'men' | 'women' | 'kids';
+  /** Salon/spa catalog segment */
+  @Column({ type: 'varchar', length: 64, default: 'hair' })
+  category!: StyleCategory;
 
   @CreateDateColumn({ type: 'timestamptz' })
   createdAt!: Date;

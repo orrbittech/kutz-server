@@ -17,7 +17,7 @@ From the `server` directory, using the same `DATABASE_URL` as the API (read from
 npm run seed:styles
 ```
 
-This runs [`scripts/seed-styles.cjs`](../scripts/seed-styles.cjs), which uses the `pg` package — **you do not need the `psql` CLI**. On each run it **first deletes all rows** from `gallery_slides`, `team_members`, and `styles` (deleting styles cascades `booking_styles` and sets `bookings.styleId` to `NULL`). Then it applies SQL in this order: `002_styles_category.sql`, `001_seed_styles.sql`, `005_team_members.sql`, `008_gallery_slides.sql` (styles catalog, team roster, Texture & tone gallery slides).
+This runs [`scripts/seed-styles.cjs`](../scripts/seed-styles.cjs), which uses the `pg` package — **you do not need the `psql` CLI**. On each run it **first deletes all rows** from `gallery_slides`, `team_members`, and `styles` (deleting styles cascades `booking_styles` and sets `bookings.styleId` to `NULL`). Then it applies SQL in this order: `002_styles_category.sql`, `012_widen_styles_category.sql`, `005_team_members.sql`, `008_gallery_slides.sql`, `009_booking_hours.sql`, `010_ensure_site_settings_default.sql`, `011_seed_site_settings_booking_hours.sql`. **Style catalog rows** are inserted from [`scripts/data/spa-services.json`](../scripts/data/spa-services.json) after the SQL files run (see that file for the current row count).
 
 If `DATABASE_URL` is already exported in your environment, that value wins over `.env` (the script only fills unset variables from `.env`).
 
@@ -26,16 +26,16 @@ If `DATABASE_URL` is already exported in your environment, that value wins over 
 If you prefer the Postgres client:
 
 ```bash
-set -a && source .env && set +a && psql "$DATABASE_URL" -f migrations/002_styles_category.sql && psql "$DATABASE_URL" -f migrations/001_seed_styles.sql
+set -a && source .env && set +a && psql "$DATABASE_URL" -f migrations/002_styles_category.sql && psql "$DATABASE_URL" -f migrations/012_widen_styles_category.sql
 ```
 
 When `synchronize` is enabled in dev, TypeORM may add `category` automatically; you can still run `002` safely (`IF NOT EXISTS`).
 
-The seed files use fixed UUIDs and `ON CONFLICT (id) DO UPDATE` (upsert) after the wipe so each run repopulates a clean slate. Re-running the script always clears marketing/catalog rows first, then inserts the canonical seed data again.
+Re-running `npm run seed:styles` clears marketing/catalog tables, applies the SQL chain, then bulk-inserts styles from `spa-services.json`. For a manual catalog load without Node, copy the JSON into your own `INSERT` script or use the seed runner.
 
 ### Column names
 
-SQL uses quoted camelCase identifiers (`"imageUrl"`, `"sortOrder"`, etc.) to match TypeORM’s default column naming for this project. The `category` column is lowercase unquoted. If your database was created with a different naming strategy, inspect the table (`\d styles` in `psql`) and adjust the seed file accordingly.
+SQL uses quoted camelCase identifiers (`"imageUrl"`, `"sortOrder"`, etc.) to match TypeORM’s default column naming for this project. The `category` column is lowercase unquoted (`varchar(64)` after `012_widen_styles_category.sql`). If your database was created with a different naming strategy, inspect the table (`\d styles` in `psql`) and adjust the seed file accordingly.
 
 ## Stripe booking payments
 
