@@ -1,6 +1,7 @@
 import { z } from 'zod';
+import { styleCategorySchema } from '../../domain/style-categories';
 
-export const styleCategorySchema = z.enum(['men', 'women', 'kids']);
+export { styleCategorySchema };
 
 export const styleResponseSchema = z.object({
   id: z.string().uuid(),

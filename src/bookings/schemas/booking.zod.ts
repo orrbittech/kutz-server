@@ -1,6 +1,7 @@
 import { createZodDto } from 'nestjs-zod';
 import { z } from 'zod';
 import { BookingPaymentStatus, BookingStatus } from '../../domain/enums';
+import { styleCategorySchema } from '../../domain/style-categories';
 
 const bookingStatusZ = z.enum([
   BookingStatus.PENDING,
@@ -54,8 +55,6 @@ export class SyncBookingPaymentBodyDto extends createZodDto(
   syncBookingPaymentSchema,
 ) {}
 
-const styleCategoryZ = z.enum(['men', 'women', 'kids']);
-
 export const bookingStyleSummarySchema = z.object({
   id: z.string().uuid(),
   name: z.string(),
@@ -63,7 +62,7 @@ export const bookingStyleSummarySchema = z.object({
   imageUrl: z.string().nullable(),
   priceCents: z.number().int().nullable(),
   durationMinutes: z.number().int().nullable(),
-  category: styleCategoryZ,
+  category: styleCategorySchema,
   quantity: z.number().int().min(1).max(99),
 });
 
