@@ -24,14 +24,14 @@ const SINGLETON_ID = 'default';
 const DEFAULT_OPENING_HOURS = ['Mo-Su 07:00-20:00'];
 
 const DEFAULT_SITE_ADDRESS = {
-  addressLine1: '352 Van Heerden, Halfway Gardens',
-  city: 'Midrand',
-  region: 'Gauteng',
-  postalCode: '1685',
+  addressLine1: '7 Imaginary Crescent, Widget Park',
+  city: 'Samplefield',
+  region: 'Demo Province',
+  postalCode: '0000',
   country: 'ZA',
   phone: '+27 00 000 0000',
-  latitude: -25.995,
-  longitude: 28.13,
+  latitude: -33.9249,
+  longitude: 18.4241,
 } as const;
 
 export const DEFAULT_THEME: ThemeTokens = {

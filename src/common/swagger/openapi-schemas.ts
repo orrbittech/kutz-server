@@ -1,3 +1,5 @@
+import { STYLE_CATEGORY_ENUM } from '../../domain/style-categories';
+
 /** Shared OpenAPI schema fragments for Swagger decorators (match runtime JSON shapes). */
 
 export const themeTokensOpenApiSchema = {
@@ -158,7 +160,7 @@ export const bookingStyleSummaryOpenApiSchema = {
     imageUrl: { type: 'string', nullable: true },
     priceCents: { type: 'integer', nullable: true },
     durationMinutes: { type: 'integer', nullable: true },
-    category: { type: 'string', enum: ['men', 'women', 'kids'] },
+    category: { type: 'string', enum: STYLE_CATEGORY_ENUM },
     quantity: {
       type: 'integer',
       minimum: 1,
@@ -289,8 +291,8 @@ export const styleResponseOpenApiSchema = {
     },
     category: {
       type: 'string',
-      enum: ['men', 'women', 'kids'],
-      description: 'Salon catalog segment',
+      enum: STYLE_CATEGORY_ENUM,
+      description: 'Salon/spa catalog segment',
     },
     createdAt: { type: 'string' },
     updatedAt: { type: 'string' },
